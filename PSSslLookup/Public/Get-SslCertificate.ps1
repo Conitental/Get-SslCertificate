@@ -26,19 +26,38 @@ Get-SslCertificate -Uri "www.example.com" -Port 8443
 #>
 
 Function Get-SslCertificate {
+	[CmdletBinding(DefaultParameterSetName = 'ByUri')]
     param(
-        [String]$Uri,
-        [Int]$Port = 443,
-        [Switch]$IncludeCertificate,
+    	[Parameter(Mandatory, ParameterSetName = 'ByUri', Position = 0)]
+    	[String]$Uri,
 
-        [ValidateScript({[ipaddress]$_})]
-        [String]$IPAddress
+        [Parameter(Mandatory, ParameterSetName = 'ByIP', Position = 0)]
+        [ValidateScript({[ipaddress]($_ -replace '^https://')})]
+        [String]$IPAddress,
+
+        [Int]$Port = 443,
+        [Switch]$IncludeCertificate
     )
 
-    $TcpClient = New-Object -TypeName System.Net.Sockets.TcpClient -ArgumentList $Uri, $Port
+    # Decide between Uri and IpAdress and remove scheme
+    $Endpoint = switch ($PSCmdlet.ParameterSetName) {
+    	'ByUri' { $Uri -replace '^https://' }
+    	'ByIP' { $IPAddress.IPAddressToString -replace '^https://' }
+    }
+
+    Write-Verbose "Create TcpClient and SslStream and connect to $($Endpoint):$Port"
+    $TcpClient = New-Object -TypeName System.Net.Sockets.TcpClient -ArgumentList $Endpoint, $Port
     $SslStream = New-Object -TypeName System.Net.Security.SslStream -ArgumentList $TcpClient.GetStream(), $false, { $true }
 
-    $SslStream.AuthenticateAsClient($Uri)
+    Write-Verbose "Authenticate as client"
+    Try {
+    	$SslStream.AuthenticateAsClient($Endpoint)
+    	Write-Verbose "Authenticated successfully"
+
+    } Catch {
+    	Write-Verbose "Could not authenticate to $($Endpoint):$Port"
+    	Return
+    }
 
     $Certificate = $SslStream.RemoteCertificate
 
@@ -71,7 +90,7 @@ Function Get-SslCertificate {
         Thumbprint   = $Certificate.Thumbprint
         Extensions   = $Extensions
         Request      = @{
-            TcpHost      = $Uri
+            TcpHost      = $Endpoint
         }
     }
 
