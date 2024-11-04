@@ -88,5 +88,3 @@ Function Get-SslCertificate {
 
     Write-Output $CertObject
 }
-
-Export-ModuleMember -Function Get-SslCertificate
